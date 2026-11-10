@@ -1,4 +1,4 @@
-const VERSION = 'shmex-v7';
+const VERSION = 'shmex-v8';
 const SHELL = [
   './',
   'index.html',

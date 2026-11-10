@@ -16,21 +16,19 @@ export function stars(value, label = 'Bewertung') {
   return html + '</span>';
 }
 
-export function starInput(field, value) {
-  let html = `<div class="star-input" role="group" aria-label="Gesamtwertung">`;
+export function starInput(field, value, label = 'Gesamtwertung') {
+  let html = `<div class="star-input" role="group" aria-label="${esc(label)}">`;
   for (let i = 1; i <= 5; i++) {
-    html += `<button type="button" class="${value && i <= value ? 'on' : ''}" data-field="${field}" data-value="${i}" aria-label="${i} Stern${i > 1 ? 'e' : ''}" aria-pressed="${value === i}">
+    html += `<button type="button" class="${value && i <= value ? 'on' : ''}" data-field="${field}" data-value="${i}" aria-label="${esc(label)}: ${i} Stern${i > 1 ? 'e' : ''}" aria-pressed="${value === i}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="${STAR_PATH}"/></svg></button>`;
   }
   return html + '</div>';
 }
 
+// Menge und Preis/Leistung: ebenfalls Sterne, darunter die Bedeutung der Enden.
 export function scaleInput(field, value, left, right, label) {
-  let html = `<div class="scale" role="group" aria-label="${esc(label)}">`;
-  for (let i = 1; i <= 5; i++) {
-    html += `<button type="button" class="${value === i ? 'on' : ''}" data-field="${field}" data-value="${i}" aria-pressed="${value === i}">${i}</button>`;
-  }
-  return html + `</div><div class="scale-labels"><span>${esc(left)}</span><span>${esc(right)}</span></div>`;
+  return `<div class="star-scale">${starInput(field, value, label)}
+    <div class="scale-labels"><span>${esc(left)}</span><span>${esc(right)}</span></div></div>`;
 }
 
 export function initials(name) {

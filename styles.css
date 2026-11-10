@@ -212,6 +212,8 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .scale { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .scale button { height: 40px; border-radius: 10px; border: 1px solid #C5CDDA; background: #fff; font-weight: 700; }
 .scale button.on { background: var(--plum); border-color: var(--plum); color: #fff; }
+.star-scale { display: inline-block; }
+.star-scale .scale-labels { padding: 0 6px; margin-top: 0; }
 .scale-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
 
 .meta { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; color: var(--muted); margin-top: 6px; }
