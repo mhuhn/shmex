@@ -153,7 +153,12 @@ export async function copyPhoto(dish) {
 }
 
 // Foto eines Gerichts entfernen: lokal löschen, im Drive in den Papierkorb.
-export async function forgetPhoto(photoId, photoFileId) {
+export async function forgetPhoto(photoId, photoFileId, { now = false } = {}) {
+  // Während einer Besuchsbearbeitung erst beim Übernehmen löschen, damit „Abbrechen“ das Foto zurückholen kann.
+  if (!now && store.session) {
+    store.session.photoDeletes.push({ photoId, photoFileId });
+    return;
+  }
   if (photoFileId) store.queuePhotoDelete(photoFileId);
   if (photoId) await delRec(photoId).catch(() => {});
 }

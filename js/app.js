@@ -1,4 +1,4 @@
-import { store, uid } from './store.js';
+import { store, uid, COLLECTIONS } from './store.js';
 import { isValidScriptUrl } from './api.js';
 import { getPosition, distance, formatDistance, nearbyPlaces, cachedPlaces } from './geo.js';
 import { addPhoto, photoUrl, processQueue, forgetPhoto, copyPhoto } from './photos.js';
@@ -20,6 +20,7 @@ const $title = document.getElementById('title');
 const $back = document.getElementById('backBtn');
 const $tabbar = document.getElementById('tabbar');
 const $done = document.getElementById('doneBtn');
+const $cancel = document.getElementById('cancelBtn');
 
 const state = {
   view: null,
@@ -44,6 +45,7 @@ const thumbCache = new Map();
 // ---------------------------------------------------------------- Navigation
 
 function go(view, params = {}, { replace = false } = {}) {
+  if (state.view === 'visit' && view !== 'visit') commitSession();
   if (!replace && state.view) state.stack.push({ view: state.view, params: state.params, scroll: $content.scrollTop });
   state.view = view;
   state.params = params;
@@ -52,6 +54,7 @@ function go(view, params = {}, { replace = false } = {}) {
 }
 
 function back() {
+  if (state.view === 'visit') commitSession();
   const prev = state.stack.pop();
   if (!prev) return;
   state.view = prev.view;
@@ -61,6 +64,7 @@ function back() {
 }
 
 function switchTab(tab) {
+  if (state.view === 'visit') commitSession();
   closeSheet();
   state.tab = tab;
   state.stack = [];
@@ -81,6 +85,8 @@ function render() {
   $title.textContent = out.title;
   $back.hidden = state.stack.length === 0 || !!out.done;
   $done.hidden = !out.done;
+  $cancel.hidden = !out.done;
+  if (state.view === 'visit' && !store.session) startSession(state.params);
   const setup = state.view === 'setup';
   $tabbar.hidden = setup;
   document.body.classList.toggle('no-tabs', setup);
@@ -155,6 +161,81 @@ function deletePhotosOf(dishes) {
 
 function locDistance(loc) {
   return state.pos && loc ? distance(state.pos, loc) : null;
+}
+
+// ---------------------------------------------------------------- Bearbeitungssitzung (Besuch)
+// Jede Änderung wird sofort gespeichert. Damit „Abbrechen“ möglich ist, merkt sich die Sitzung den
+// Ausgangsstand und stellt die betroffenen Einträge beim Abbrechen wieder her.
+
+function startSession(params) {
+  store.session = {
+    params,
+    snap: JSON.parse(JSON.stringify(store.data)),
+    pending: state.pendingLocs[params.locId] ? { ...state.pendingLocs[params.locId] } : null,
+    photoDeletes: [],
+  };
+}
+
+function sessionIds(data, params) {
+  return {
+    locations: new Set([params.locId]),
+    visits: new Set([params.visitId]),
+    dishes: new Set(data.dishes.filter((d) => d.visitId === params.visitId).map((d) => d.id)),
+    people: new Set(data.people.map((p) => p.id)),
+  };
+}
+
+// Liste der Einträge, die sich seit Beginn der Sitzung geändert haben: [collection, id, alt, neu]
+function sessionChanges() {
+  const s = store.session;
+  if (!s) return [];
+  const a = sessionIds(s.snap, s.params);
+  const b = sessionIds(store.data, s.params);
+  const out = [];
+  for (const c of COLLECTIONS) {
+    for (const id of new Set([...a[c], ...b[c]])) {
+      const old = s.snap[c].find((x) => x.id === id) || null;
+      const cur = store.data[c].find((x) => x.id === id) || null;
+      if (JSON.stringify(old) !== JSON.stringify(cur)) out.push([c, id, old, cur]);
+    }
+  }
+  return out;
+}
+
+function commitSession() {
+  const s = store.session;
+  if (!s) return;
+  store.session = null;
+  for (const p of s.photoDeletes) forgetPhoto(p.photoId, p.photoFileId, { now: true });
+}
+
+function cancelSession() {
+  const s = store.session;
+  if (!s) return;
+  const changes = sessionChanges();
+  store.session = null;
+  if (changes.length) {
+    const oldPhotos = new Set(s.snap.dishes.map((d) => d.photoId).filter(Boolean));
+    const now = Date.now();
+    // Fotos, die erst in dieser Sitzung dazukamen, wieder entfernen.
+    for (const [c, , old, cur] of changes) {
+      if (c === 'dishes' && cur && cur.photoId && !oldPhotos.has(cur.photoId) && (!old || old.photoId !== cur.photoId)) {
+        forgetPhoto(cur.photoId, cur.photoFileId, { now: true });
+      }
+    }
+    store.update((data) => {
+      for (const [c, id, old] of changes) {
+        const i = data[c].findIndex((x) => x.id === id);
+        const restored = old ? { ...old, updatedAt: now } : null;
+        if (restored) {
+          if (i >= 0) data[c][i] = restored; else data[c].push(restored);
+        } else if (i >= 0) {
+          data[c][i] = { ...data[c][i], deleted: true, updatedAt: now };
+        }
+      }
+    });
+    if (s.pending) state.pendingLocs[s.params.locId] = s.pending;
+  }
 }
 
 // ---------------------------------------------------------------- Position & Auswahl
@@ -1123,6 +1204,19 @@ $tabbar.addEventListener('click', (e) => {
   }
   switchTab(b.dataset.tab);
 });
+// ✕ oben links: Bearbeitung des Besuchs verwerfen.
+$cancel.addEventListener('click', () => {
+  clearTimeout(visitCommentTimer);
+  const comment = $content.querySelector('[data-bind=visitComment]');
+  const cur = store.get('visits', state.params.visitId);
+  const typed = comment && (cur ? cur.comment || '' : '') !== comment.value;
+  if ((sessionChanges().length || typed) && !confirm('Änderungen an diesem Besuch verwerfen?')) return;
+  closeSheet();
+  cancelSession();
+  back();
+  toast('Änderungen verworfen');
+});
+
 // Haken oben rechts auf Bearbeitungsscreens: offene Eingaben übernehmen und zurück.
 $done.addEventListener('click', () => {
   const a = document.activeElement;

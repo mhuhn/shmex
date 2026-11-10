@@ -64,7 +64,7 @@ svg { display: block; }
   text-overflow: ellipsis;
   padding-left: 8px;
 }
-.topbar-back + .topbar-title { padding-left: 0; }
+.topbar:has(.topbar-back:not([hidden])) .topbar-title { padding-left: 0; }
 .topbar-back, .topbar-done {
   width: 44px; height: 44px;
   border: 0; background: none; border-radius: 22px;
