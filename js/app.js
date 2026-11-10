@@ -1,6 +1,6 @@
 import { store, uid, COLLECTIONS } from './store.js';
 import { isValidScriptUrl } from './api.js';
-import { getPosition, distance, formatDistance, nearbyPlaces, cachedPlaces } from './geo.js';
+import { getPosition, distance, formatDistance, nearbyPlaces, cachedPlaces, searchPlacesByName } from './geo.js';
 import { addPhoto, photoUrl, processQueue, forgetPhoto, copyPhoto } from './photos.js';
 import { BUILD_TIME } from './version.js';
 import {
@@ -12,6 +12,7 @@ const AUTO_RADIUS = 200;
 const AMOUNT_LABELS = { 1: 'wenig', 5: 'reichlich', 6: 'zu viel' };
 const VALUE_LABELS = { 1: 'teuer', 5: 'top' };
 const OSM_RADIUS = 500;
+const NAME_RADIUS = 20000;
 const README_URL = 'https://github.com/mhuhn/shmex#einrichtung';
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
@@ -148,6 +149,16 @@ function locRating(locId) {
   const dr = store.dishesAt(locId).map((d) => d.rating).filter(Boolean);
   if (dr.length) return { value: dr.reduce((a, b) => a + b, 0) / dr.length, count: 0 };
   return { value: 0, count: 0 };
+}
+
+const AVATAR_COLORS = ['#A9C8F2', '#F6C28B', '#B5DFC0', '#F3B0C3', '#CDB8F0', '#F0DC85', '#9FD8DE', '#E5B9A0', '#C9D88F', '#D7C3B0'];
+
+// Feste Farbe pro Person, nach Reihenfolge des Anlegens (auf allen Geräten gleich).
+function avatar(personId, name) {
+  const people = store.live('people').slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.id.localeCompare(b.id));
+  const i = people.findIndex((p) => p.id === personId);
+  const bg = i < 0 ? '#D9DCE2' : AVATAR_COLORS[i % AVATAR_COLORS.length];
+  return `<span class="avatar" style="background:${bg}">${initials(name)}</span>`;
 }
 
 function personName(id) {
@@ -310,6 +321,81 @@ function openLocationFromPick(locId) {
   state.current = locId;
   state.pickTouched = true;
   go('location', { locId });
+}
+
+// Eigener Name: erst schauen, ob es eine Location dieses Namens im Umkreis von 20 km gibt.
+function searchNamedLocation(name, pos) {
+  const ctrl = new AbortController();
+  let done = false;
+  const createOwn = () => {
+    done = true;
+    openLocationFromPick(choosePending({ name, lat: pos.lat, lon: pos.lon, kind: '', address: '' }));
+  };
+  const q = name.toLowerCase();
+  const savedHits = store.locations()
+    .map((l) => ({ ...l, saved: true, distance: distance(pos, l) }))
+    .filter((l) => l.distance <= NAME_RADIUS && l.name.toLowerCase().includes(q))
+    .sort((a, b) => a.distance - b.distance);
+  const row = (h, i) => `<button type="button" class="list-item" data-hit="${i}">
+    <div class="grow"><div class="title">${esc(h.name)}${h.saved ? ' <span class="badge visited">besucht</span>' : ''}</div>
+    <div class="sub">${esc([h.kind, h.address].filter(Boolean).join(' · ') || 'OpenStreetMap')}</div></div>
+    <span class="dist">${formatDistance(h.distance)}</span>${icons.chev}</button>`;
+
+  openSheet({
+    title: `„${name}“ suchen`,
+    cancel: true,
+    body: `<div class="stack">
+      <div id="nameResults"><div class="center"><div class="spinner"></div><p class="muted small">Suche im Umkreis von 20 km …</p></div></div>
+      <button type="button" class="btn secondary block" data-own>Ohne Suche als eigenen Ort anlegen</button>
+    </div>`,
+    onMount(sheet) {
+      let hits = savedHits;
+      const host = sheet.el.querySelector('#nameResults');
+      const show = (searching) => {
+        if (!hits.length && !searching) { host.innerHTML = '<p class="empty">Nichts gefunden.</p>'; return; }
+        host.innerHTML = `${hits.length ? `<div class="list">${hits.map(row).join('')}</div>` : ''}
+          ${searching ? '<div class="center"><div class="spinner"></div><p class="muted small">Suche im Umkreis von 20 km …</p></div>' : ''}`;
+      };
+      if (hits.length) show(true);
+      const ownBtn = sheet.el.querySelector('[data-own]');
+      sheet.el.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-hit]');
+        if (b) {
+          const h = hits[Number(b.dataset.hit)];
+          done = true;
+          ctrl.abort();
+          sheet.close();
+          if (h.saved) openLocationFromPick(h.id);
+          else openLocationFromPick(choosePending({ name: h.name, lat: h.lat, lon: h.lon, osmId: h.osmId, kind: h.kind, address: h.address }));
+          return;
+        }
+        if (e.target.closest('[data-own]')) { ctrl.abort(); sheet.close(); createOwn(); }
+      });
+      // ✕ bricht nur die Suche ab, es wird nichts angelegt.
+      sheet.onClose = () => { ctrl.abort(); };
+      searchPlacesByName(name, pos, NAME_RADIUS, ctrl.signal)
+        .then((found) => {
+          if (done) return;
+          const savedOsm = new Set(hits.map((h) => h.osmId).filter(Boolean));
+          hits = [...hits, ...found.filter((f) => !savedOsm.has(f.osmId))];
+          if (!hits.length) {
+            sheet.onClose = null;
+            sheet.close();
+            createOwn();
+            toast('Nichts gefunden – als eigener Ort angelegt');
+            return;
+          }
+          show(false);
+          ownBtn.textContent = 'Keiner davon – als eigenen Ort anlegen';
+        })
+        .catch(() => {
+          if (done || ctrl.signal.aborted) return;
+          show(false);
+          if (!hits.length) host.innerHTML = '<div class="banner warn">Suche gerade nicht möglich.</div>';
+          ownBtn.textContent = 'Als eigenen Ort anlegen';
+        });
+    },
+  });
 }
 
 // ---------------------------------------------------------------- Karte
@@ -475,7 +561,8 @@ VIEWS.location = (params) => {
     <div class="meta">${loc.kind ? `<span>${esc(loc.kind)}</span>` : ''}${loc.address ? `<span>${esc(loc.address)}</span>` : ''}${d != null ? `<span>${formatDistance(d)} von hier</span>` : ''}</div></div>
     ${r.value ? `<div class="row">${stars(r.value, 'Besuchswertung')}<span class="small muted">Ø ${fmtNum(r.value)}${r.count ? ` aus ${r.count} Besuchswertung${r.count > 1 ? 'en' : ''}` : ' (Gerichte)'}</span></div>` : ''}
     ${saved ? '' : '<p class="small muted">Wird gespeichert, sobald du etwas einträgst.</p>'}
-    <button type="button" class="btn block" data-action="openToday">${icons.plus}${today ? 'Heutigen Besuch bearbeiten' : 'Heutigen Besuch eintragen'}</button>
+    <button type="button" class="btn block" data-action="newVisit">${icons.plus}Besuch eintragen</button>
+    ${today ? `<button type="button" class="btn ghost small" data-action="openVisit" data-id="${esc(today.id)}" style="align-self:center">Heute schon eingetragen – bearbeiten</button>` : ''}
   </div>`;
 
   html += '<h2>Wer mag was</h2>';
@@ -493,7 +580,7 @@ VIEWS.location = (params) => {
       const list = byPerson.get(pid).sort((a, b) => (b.rating || 0) - (a.rating || 0)
         || (visitDate.get(b.visitId) || '').localeCompare(visitDate.get(a.visitId) || ''));
       const name = pid === '_' ? 'Ohne Person' : personName(pid);
-      html += `<div class="card person-block"><h3><span class="avatar">${initials(name)}</span>${esc(name)}</h3>
+      html += `<div class="card person-block"><h3>${avatar(pid, name)}${esc(name)}</h3>
         ${list.map((dish) => dishRow(dish, visitDate.get(dish.visitId))).join('')}</div>`;
     }
   }
@@ -547,7 +634,7 @@ VIEWS.visit = (params) => {
   for (const pid of personIds) {
     const own = dishes.filter((d) => d.personId === pid);
     const name = personName(pid);
-    html += `<div class="card"><div class="row" style="margin-bottom:${own.length ? 10 : 6}px"><span class="avatar">${initials(name)}</span><h3 class="grow">${esc(name)}</h3>
+    html += `<div class="card"><div class="row" style="margin-bottom:${own.length ? 10 : 6}px">${avatar(pid, name)}<h3 class="grow">${esc(name)}</h3>
       ${own.length ? '' : `<button type="button" class="btn ghost small" data-action="removePerson" data-id="${esc(pid)}" aria-label="${esc(name)} entfernen">${icons.close}</button>`}</div>
       ${own.map((d) => `<button type="button" class="dish-btn" data-action="editDish" data-id="${esc(d.id)}">
         ${d.photoId ? `<img class="thumb" style="width:44px;height:44px" src="${BLANK}" data-photo-dish="${esc(d.id)}" alt="">` : ''}
@@ -647,7 +734,7 @@ VIEWS.settings = () => {
     <h2>Personen</h2>
     ${people.length ? `<div class="list">${people.map((p) => {
       const n = dishes.filter((d) => d.personId === p.id).length;
-      return `<div class="list-item"><span class="avatar">${initials(p.name)}</span>
+      return `<div class="list-item">${avatar(p.id, p.name)}
         <div class="grow"><div class="title">${esc(p.name)}</div><div class="sub">${n} Gericht${n === 1 ? '' : 'e'}</div></div>
         <button type="button" class="btn ghost small" data-action="renamePerson" data-id="${esc(p.id)}" aria-label="${esc(p.name)} umbenennen">${icons.edit}</button>
         ${n ? '' : `<button type="button" class="btn ghost small" data-action="deletePerson" data-id="${esc(p.id)}" aria-label="${esc(p.name)} löschen">${icons.trash}</button>`}
@@ -951,9 +1038,8 @@ const actions = {
     const input = document.getElementById('customName');
     const name = input.value.trim();
     if (!name) { toast('Bitte einen Namen eingeben'); input.focus(); return; }
-    const create = (pos) => openLocationFromPick(choosePending({ name, lat: pos.lat, lon: pos.lon, kind: '', address: '' }));
-    if (state.pos) create(state.pos);
-    else openMapSheet({ title: 'Wo ist „' + name + '“?', center: null, onPick: create });
+    if (state.pos) searchNamedLocation(name, state.pos);
+    else openMapSheet({ title: 'Wo ungefähr ist „' + name + '“?', center: null, onPick: (pos) => searchNamedLocation(name, pos) });
   },
   pickSaved(el) { openLocationFromPick(el.dataset.id); },
   pickOsm(el) {
@@ -967,10 +1053,8 @@ const actions = {
     go('pick', {}, { replace: true });
     if (!state.places && !state.placesLoading) loadPlaces();
   },
-  openToday() {
-    const locId = state.params.locId;
-    const today = isSaved(locId) && store.visitsOf(locId).find((v) => v.date === todayIso());
-    go('visit', today ? { locId, visitId: today.id } : { locId, visitId: uid(), date: todayIso() });
+  newVisit() {
+    go('visit', { locId: state.params.locId, visitId: uid(), date: todayIso() });
   },
   openVisit(el) {
     const v = store.get('visits', el.dataset.id);

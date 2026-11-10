@@ -68,9 +68,13 @@ const PHOTON_TAGS = [
   'shop:bakery', 'shop:butcher', 'shop:deli', 'shop:pastry', 'shop:confectionery',
 ];
 
-async function fetchJson(url, options, timeout) {
+async function fetchJson(url, options, timeout, outerSignal) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
+  if (outerSignal) {
+    if (outerSignal.aborted) ctrl.abort();
+    else outerSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
+  }
   try {
     const res = await fetch(url, { ...options, signal: ctrl.signal });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -175,4 +179,45 @@ export async function nearbyPlaces(pos, radius = 500) {
   const places = finish(list, pos, radius);
   storeCache(pos, places);
   return places;
+}
+
+// Suche nach einem Namen im Umkreis (für selbst eingetragene Namen). Overpass und Photon parallel.
+export async function searchPlacesByName(name, pos, radius = 20000, signal) {
+  const a = `around:${radius},${pos.lat.toFixed(6)},${pos.lon.toFixed(6)}`;
+  const rx = name.trim().replace(/[\\.*+?^${}()|[\]"]/g, '.');
+  const q = `[out:json][timeout:15];(
+nwr(${a})["name"~"${rx}",i]["amenity"];
+nwr(${a})["name"~"${rx}",i]["shop"];
+nwr(${a})["name"~"${rx}",i]["tourism"];
+);out center tags 40;`;
+  const body = 'data=' + encodeURIComponent(q);
+  const over = Promise.any(OVERPASS.map((url) => fetchJson(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
+  }, 16000, signal).then((j) => {
+    if (!j || !Array.isArray(j.elements)) throw new Error('Ungültige Antwort');
+    return j.elements.map((el) => {
+      const p = el.type === 'node' ? { lat: el.lat, lon: el.lon } : el.center;
+      if (!p) return null;
+      const t = el.tags || {};
+      const street = [t['addr:street'], t['addr:housenumber']].filter(Boolean).join(' ');
+      return { osmId: el.type + '/' + el.id, name: t.name, lat: p.lat, lon: p.lon,
+        kind: describe(t) || t.amenity || t.shop || t.tourism || '', address: [street, t['addr:city']].filter(Boolean).join(', ') };
+    });
+  }))).catch(() => null);
+  const params = new URLSearchParams({ q: name, lat: pos.lat.toFixed(6), lon: pos.lon.toFixed(6), limit: '20', lang: 'de' });
+  const types = { N: 'node', W: 'way', R: 'relation' };
+  const photon = fetchJson('https://photon.komoot.io/api/?' + params, {}, 10000, signal).then((json) => (json.features || [])
+    .filter((f) => ['amenity', 'shop', 'tourism', 'leisure'].includes((f.properties || {}).osm_key))
+    .map((f) => {
+      const pr = f.properties;
+      const c = f.geometry && f.geometry.coordinates;
+      if (!c || !pr.name) return null;
+      const street = [pr.street, pr.housenumber].filter(Boolean).join(' ');
+      return { osmId: (types[pr.osm_type] || 'node') + '/' + pr.osm_id, name: pr.name, lat: c[1], lon: c[0],
+        kind: describe({ [pr.osm_key]: pr.osm_value }), address: [street, pr.city].filter(Boolean).join(', ') };
+    })).catch(() => null);
+  const [o, p] = await Promise.all([over, photon]);
+  if (signal && signal.aborted) throw new Error('abgebrochen');
+  if (!o && !p) throw new Error('Suche gerade nicht möglich');
+  return finish([...(o || []), ...(p || [])], pos, radius);
 }
