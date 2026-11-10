@@ -1,7 +1,7 @@
 import { store, uid } from './store.js';
 import { isValidScriptUrl } from './api.js';
 import { getPosition, distance, formatDistance, nearbyPlaces, cachedPlaces } from './geo.js';
-import { addPhoto, photoUrl, processQueue, forgetPhoto } from './photos.js';
+import { addPhoto, photoUrl, processQueue, forgetPhoto, copyPhoto } from './photos.js';
 import { BUILD_TIME } from './version.js';
 import {
   esc, stars, starInput, scaleInput, initials, todayIso, fmtDate, fmtNum, toast, icons,
@@ -641,6 +641,30 @@ function openPersonSheet(params) {
   });
 }
 
+// Vorlagen für ein neues Gericht: zuerst Gerichte anderer Personen aus diesem Besuch, dann aus früheren
+// Besuchen dieser Location – ohne Gerichte, die die Person in diesem Besuch schon eingetragen hat.
+function dishTemplates(visitId, personId, locId) {
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const seen = new Set(store.dishesOf(visitId).filter((x) => x.personId === personId).map((x) => norm(x.name)));
+  const out = [];
+  const visits = store.visitsOf(locId);
+  const current = visits.find((v) => v.id === visitId);
+  const ordered = current ? [current, ...visits.filter((v) => v.id !== visitId)] : visits;
+  for (const v of ordered) {
+    const own = store.dishesOf(v.id)
+      .filter((x) => x.name && (v.id !== visitId || x.personId !== personId))
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    for (const dish of own) {
+      const key = norm(dish.name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ dish, date: v.date, today: v.id === visitId });
+      if (out.length >= 8) return out;
+    }
+  }
+  return out;
+}
+
 function openDishSheet({ dishId, personId, params }) {
   const existing = dishId ? store.get('dishes', dishId) : null;
   const d = existing ? { ...existing } : {
@@ -652,6 +676,7 @@ function openDishSheet({ dishId, personId, params }) {
     : params;
   const visit = store.get('visits', d.visitId);
   const suggestions = [...new Set(store.dishesAt(visitParams.locId).map((x) => x.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+  const templates = existing ? [] : dishTemplates(d.visitId, d.personId, visitParams.locId);
   let timer = null;
 
   const commit = () => {
@@ -672,6 +697,11 @@ function openDishSheet({ dishId, personId, params }) {
     title: `Gericht für ${personName(d.personId)}`,
     body: `<div class="stack">
       ${visit ? `<p class="small muted">Besuch am ${esc(fmtDate(visit.date))}</p>` : ''}
+      ${templates.length ? `<div class="field" id="templates">Vorlage übernehmen <span class="small muted" style="font-weight:400">(danach alles anpassbar)</span>
+        <div>${templates.map((t, i) => `<button type="button" class="dish-btn" data-template="${i}">
+          <div class="grow"><div style="font-weight:700;color:var(--ink)">${esc(t.dish.name)}</div>
+          <div class="small muted">${esc(personName(t.dish.personId))}${t.today ? ' · heute' : ' · ' + esc(fmtDate(t.date))}${t.dish.photoId ? ' · mit Foto' : ''}</div></div>
+          ${t.dish.rating ? stars(t.dish.rating) : ''}</button>`).join('')}</div></div>` : ''}
       <label class="field">Gericht
         <input type="text" id="dishName" list="dishSuggest" value="${esc(d.name)}" placeholder="z. B. Pizza Funghi" autocapitalize="sentences" enterkeyhint="done">
         <datalist id="dishSuggest">${suggestions.map((s) => `<option value="${esc(s)}"></option>`).join('')}</datalist>
@@ -712,7 +742,33 @@ function openDishSheet({ dishId, personId, params }) {
       el.querySelector('#dishName').addEventListener('input', (e) => { d.name = e.target.value.trim(); commitSoon(); });
       el.querySelector('#dishName').addEventListener('change', (e) => { d.name = e.target.value.trim(); commit(); });
       el.querySelector('#dishComment').addEventListener('input', (e) => { d.comment = e.target.value; commitSoon(); });
-      el.addEventListener('click', (e) => {
+      el.addEventListener('click', async (e) => {
+        const tb = e.target.closest('[data-template]');
+        if (tb) {
+          const t = templates[Number(tb.dataset.template)].dish;
+          Object.assign(d, { name: t.name, rating: t.rating || null, amount: t.amount || null, value: t.value || null, comment: t.comment || '' });
+          el.querySelector('#dishName').value = d.name;
+          el.querySelector('#dishComment').value = d.comment;
+          el.querySelector('#ratingWrap').innerHTML = starInput('rating', d.rating);
+          el.querySelector('#amountWrap').innerHTML = scaleInput('amount', d.amount, 'wenig', 'reichlich', 'Menge');
+          el.querySelector('#valueWrap').innerHTML = scaleInput('value', d.value, 'teuer', 'top', 'Preis/Leistung');
+          el.querySelector('#templates').innerHTML = `<p class="small muted">Vorlage „${esc(t.name)}“ von ${esc(personName(t.personId))} übernommen – alles lässt sich noch ändern.</p>`;
+          commit();
+          if (t.photoId && !d.photoId) {
+            el.querySelector('#photoBox').innerHTML = '<p class="small muted">Foto wird übernommen …</p>';
+            const id = await copyPhoto(t);
+            if (id && !d.photoId) {
+              d.photoId = id;
+              d.photoFileId = null;
+              commit();
+              processQueue();
+            } else if (!id) {
+              toast('Foto der Vorlage konnte nicht geladen werden');
+            }
+            showPhoto();
+          }
+          return;
+        }
         const b = e.target.closest('[data-field]');
         if (!b) return;
         const field = b.dataset.field;

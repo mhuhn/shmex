@@ -143,6 +143,15 @@ export async function photoUrl(dish) {
   return inflight.get(dish.photoId);
 }
 
+// Foto eines anderen Gerichts als eigene Kopie übernehmen (damit beide unabhängig bleiben).
+export async function copyPhoto(dish) {
+  const url = await photoUrl(dish);
+  if (!url) return null;
+  const id = uid();
+  await putRec({ id, base64: url.split(',')[1], pending: true, createdAt: Date.now() });
+  return id;
+}
+
 // Foto eines Gerichts entfernen: lokal löschen, im Drive in den Papierkorb.
 export async function forgetPhoto(photoId, photoFileId) {
   if (photoFileId) store.queuePhotoDelete(photoFileId);
