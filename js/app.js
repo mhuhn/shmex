@@ -1174,6 +1174,10 @@ function updateBuildAge() {
   const show = isFinite(t) && min < 30;
   el.hidden = !show;
   if (show) {
+    // Frisch: dunkelgrau, mit zunehmendem Alter heller, bei 30 min fast so hell wie der Hintergrund.
+    const f = Math.min(1, (Date.now() - t) / (30 * 60000));
+    const mix = (a, b) => Math.round(a + (b - a) * f);
+    el.style.color = `rgb(${mix(64, 238)}, ${mix(68, 240)}, ${mix(76, 243)})`;
     el.textContent = min + ' min';
     el.title = 'Diese App-Version wurde vor ' + min + ' Minuten veröffentlicht';
   }
