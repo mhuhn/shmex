@@ -1,4 +1,4 @@
-const VERSION = 'shmex-v3';
+const VERSION = 'shmex-v4';
 const SHELL = [
   './',
   'index.html',
@@ -10,6 +10,7 @@ const SHELL = [
   'js/geo.js',
   'js/photos.js',
   'js/ui.js',
+  'js/version.js',
   'icons/icon-192.png',
   'icons/apple-touch-icon.png',
   'icons/favicon.svg',

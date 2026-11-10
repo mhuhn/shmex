@@ -65,3 +65,11 @@ Weitere Familienmitglieder verbinden ihre Geräte mit derselben URL und demselbe
 ```
 
 Gelöschte Einträge bleiben mit `"deleted": true` erhalten, damit andere Geräte die Löschung übernehmen.
+
+### Update-Anzeige
+
+Ist die geladene App-Version weniger als 30 Minuten alt, steht links in der Tableiste klein die Zahl der Minuten seit dem Commit. So sieht man direkt, ob ein Update angekommen ist. Der Zeitpunkt steht in `js/version.js` und wird vom Git-Hook `.githooks/pre-commit` bei jedem Commit gesetzt. Den Hook aktivierst du einmal pro Klon mit:
+
+```sh
+git config core.hooksPath .githooks
+```

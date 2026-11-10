@@ -112,6 +112,15 @@ body.no-tabs .content { bottom: 0; padding-bottom: calc(32px + var(--safe-bottom
 }
 .tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .tabbar button.active { color: var(--accent); }
+.build-age {
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  font-size: 10px;
+  line-height: 1;
+  color: #B4B8C0;
+  pointer-events: none;
+}
 
 /* ---------- Bausteine ---------- */
 h1, h2, h3 { margin: 0; color: var(--plum); }

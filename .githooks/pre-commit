@@ -1,0 +1,6 @@
+#!/bin/sh
+# Schreibt den Commit-Zeitpunkt in js/version.js, damit die App anzeigen kann, wie frisch sie ist.
+# Aktivieren (einmal pro Klon): git config core.hooksPath .githooks
+f=js/version.js
+printf "// Wird beim Commit automatisch gesetzt (.githooks/pre-commit).\nexport const BUILD_TIME = '%s';\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$f"
+git add "$f"

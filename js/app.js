@@ -2,6 +2,7 @@ import { store, uid } from './store.js';
 import { isValidScriptUrl } from './api.js';
 import { getPosition, distance, formatDistance, nearbyPlaces, cachedPlaces } from './geo.js';
 import { addPhoto, photoUrl, processQueue, forgetPhoto } from './photos.js';
+import { BUILD_TIME } from './version.js';
 import {
   esc, stars, starInput, scaleInput, initials, todayIso, fmtDate, fmtNum, toast, icons,
   openSheet, closeSheet, sheetOpen,
@@ -1092,6 +1093,24 @@ document.addEventListener('visibilitychange', () => {
   processQueue();
 });
 window.addEventListener('online', () => processQueue());
+
+// ---------------------------------------------------------------- Update-Anzeige
+
+// Zeigt links in der Tableiste, wie viele Minuten der Commit dieser App-Version her ist (nur die ersten 30 min).
+function updateBuildAge() {
+  const el = document.getElementById('buildAge');
+  const t = Date.parse(BUILD_TIME);
+  const min = Math.max(0, Math.floor((Date.now() - t) / 60000));
+  const show = isFinite(t) && min < 30;
+  el.hidden = !show;
+  if (show) {
+    el.textContent = min + ' min';
+    el.title = 'Diese App-Version wurde vor ' + min + ' Minuten veröffentlicht';
+  }
+}
+updateBuildAge();
+setInterval(updateBuildAge, 20000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') updateBuildAge(); });
 
 // ---------------------------------------------------------------- Start
 
