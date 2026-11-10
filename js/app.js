@@ -1,6 +1,6 @@
 import { store, uid } from './store.js';
 import { isValidScriptUrl } from './api.js';
-import { getPosition, distance, formatDistance, nearbyPlaces } from './geo.js';
+import { getPosition, distance, formatDistance, nearbyPlaces, cachedPlaces } from './geo.js';
 import { addPhoto, photoUrl, processQueue, forgetPhoto } from './photos.js';
 import {
   esc, stars, starInput, scaleInput, initials, todayIso, fmtDate, fmtNum, toast, icons,
@@ -195,15 +195,20 @@ function tryAutoPick() {
 
 async function loadPlaces() {
   if (!state.pos) return;
-  state.placesLoading = true;
+  const cached = cachedPlaces(state.pos, OSM_RADIUS);
+  state.places = cached;
+  state.placesLoading = !cached;
+  state.placesRefreshing = !!cached;
   state.placesError = '';
   if (state.view === 'pick') renderPickResults();
+  const pos = state.pos;
   try {
-    state.places = await nearbyPlaces(state.pos, OSM_RADIUS);
+    const places = await nearbyPlaces(pos, OSM_RADIUS);
+    if (state.pos === pos) state.places = places;
   } catch (err) {
-    state.places = null;
-    state.placesError = err.message;
+    if (!cached) { state.places = null; state.placesError = err.message; }
   }
+  state.placesRefreshing = false;
   state.placesLoading = false;
   if (state.view === 'pick') renderPickResults();
 }
@@ -347,7 +352,7 @@ function renderPickResults() {
       html += `<div class="list">${osm.map((p) => `<button type="button" class="list-item" data-action="pickOsm" data-id="${esc(p.osmId)}" data-name="${esc(p.name.toLowerCase())}">
         <div class="grow"><div class="title">${esc(p.name)}</div><div class="sub">${esc([p.kind, p.address].filter(Boolean).join(' · ') || 'OpenStreetMap')}</div></div>
         <span class="dist">${formatDistance(p.distance)}</span>${icons.chev}</button>`).join('')}</div>
-        <p class="muted small" style="margin-top:8px">Daten © OpenStreetMap-Mitwirkende</p>`;
+        <p class="muted small" style="margin-top:8px">${state.placesRefreshing ? 'Liste wird aktualisiert … · ' : ''}Daten © OpenStreetMap-Mitwirkende</p>`;
     }
   }
   host.innerHTML = html;
