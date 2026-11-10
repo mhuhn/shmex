@@ -1,4 +1,4 @@
-const VERSION = 'shmex-v10';
+const VERSION = 'shmex-v11';
 const SHELL = [
   './',
   'index.html',
@@ -47,7 +47,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       const cache = await caches.open(VERSION);
       try {
-        const res = await fetch(req);
+        // Am HTTP-Cache vorbei (GitHub Pages erlaubt sonst bis zu 10 min alte Dateien).
+        const res = await fetch(new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }));
         if (res.ok) cache.put(req, res.clone());
         return res;
       } catch (err) {

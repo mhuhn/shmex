@@ -1285,7 +1285,27 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // ---------------------------------------------------------------- Start
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // Neue Version aktiv geworden: einmal neu laden, damit alle Dateien zusammenpassen.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    // Nicht mitten in einer Bearbeitung neu laden, sondern sobald sie abgeschlossen ist.
+    const tryReload = () => {
+      if (state.view === 'visit' || sheetOpen()) setTimeout(tryReload, 2000);
+      else location.reload();
+    };
+    tryReload();
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+    .then((reg) => {
+      reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    })
+    .catch(() => {});
 }
 
 if (!store.configured) {
