@@ -71,18 +71,19 @@ export const icons = {
   camera: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
+  check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 23s-7-7-7-12.5A7 7 0 0 1 19 10.5C19 16 12 23 12 23z"/><circle cx="12" cy="10.5" r="2.6" fill="#fff" stroke="none"/></svg>',
 };
 
 // Sheet: Dialog, der von unten hereinfährt. Nur einer gleichzeitig.
 let currentSheet = null;
-export function openSheet({ title, body, onMount, onClose }) {
+export function openSheet({ title, body, onMount, onClose, cancel = false }) {
   closeSheet();
   const host = document.getElementById('sheet');
   host.innerHTML = `<div class="sheet-panel" role="dialog" aria-modal="true" aria-label="${esc(title)}">
     <div class="sheet-head"><h3>${esc(title)}</h3>
-      <button type="button" class="btn ghost small" data-sheet-close>Fertig</button></div>
+      <button type="button" class="sheet-close" data-sheet-close aria-label="${cancel ? 'Abbrechen' : 'Übernehmen'}">${cancel ? icons.close : icons.check}</button></div>
     <div class="sheet-body">${body}</div></div>`;
   host.hidden = false;
   const panel = host.firstElementChild;

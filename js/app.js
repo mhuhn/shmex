@@ -17,7 +17,7 @@ const $content = document.getElementById('content');
 const $title = document.getElementById('title');
 const $back = document.getElementById('backBtn');
 const $tabbar = document.getElementById('tabbar');
-const $syncDot = document.getElementById('syncDot');
+const $done = document.getElementById('doneBtn');
 
 const state = {
   view: null,
@@ -77,7 +77,8 @@ function render() {
   const out = view(state.params);
   state.pendingRender = false;
   $title.textContent = out.title;
-  $back.hidden = state.stack.length === 0;
+  $back.hidden = state.stack.length === 0 || !!out.done;
+  $done.hidden = !out.done;
   const setup = state.view === 'setup';
   $tabbar.hidden = setup;
   document.body.classList.toggle('no-tabs', setup);
@@ -238,6 +239,7 @@ function openMapSheet({ title, center, zoom, markers = [], onPick }) {
   const c = center || { lat: 51.16, lon: 10.45 };
   openSheet({
     title,
+    cancel: true,
     body: `<div class="map-wrap"><div class="map" id="mapEl"></div><div class="crosshair">${icons.pin}</div></div>
       <p class="muted small" style="margin-top:10px">Karte verschieben, bis die Nadel an der richtigen Stelle steht.</p>
       <div class="spacer"></div>
@@ -478,7 +480,7 @@ VIEWS.visit = (params) => {
       <textarea data-bind="visitComment" placeholder="Kommentar zum Besuch (optional)" aria-label="Kommentar zum Besuch">${esc(v.comment || '')}</textarea>
     </div>`;
   if (saved) html += `<div class="spacer"></div><div class="spacer"></div><button type="button" class="btn danger block" data-action="deleteVisit">${icons.trash}Besuch löschen</button>`;
-  return { title: loc.name, html };
+  return { title: loc.name, html, done: true };
 };
 
 VIEWS.list = () => ({
@@ -1119,22 +1121,34 @@ $tabbar.addEventListener('click', (e) => {
   }
   switchTab(b.dataset.tab);
 });
-document.getElementById('syncBtn').addEventListener('click', () => { if (store.configured) switchTab('settings'); });
+// Haken oben rechts auf Bearbeitungsscreens: offene Eingaben übernehmen und zurück.
+$done.addEventListener('click', () => {
+  const a = document.activeElement;
+  if (a && $content.contains(a)) a.blur(); // löst „change“ aus und speichert z. B. den Kommentar
+  clearTimeout(visitCommentTimer);
+  const comment = $content.querySelector('[data-bind=visitComment]');
+  if (comment && state.view === 'visit') {
+    const cur = store.get('visits', state.params.visitId);
+    if ((cur ? cur.comment || '' : '') !== comment.value) updateVisit(state.params, { comment: comment.value });
+  }
+  closeSheet();
+  if (store.dirty) store.sync();
+  back();
+});
 
-function updateSyncDot() {
-  const s = store.status;
-  $syncDot.className = 'sync-dot' + (s === 'idle' ? (store.dirty ? ' saving' : '') : ' ' + s);
-  const label = { idle: store.dirty ? 'Ungespeicherte Änderungen' : 'Gespeichert', saving: 'Wird gespeichert', offline: 'Offline', error: 'Speicherfehler' }[s];
-  document.getElementById('syncBtn').setAttribute('aria-label', 'Speicherstatus: ' + label);
-}
-
+// Speicherstatus nur bei Problemen melden (Details unter Einstellungen).
+let lastStatus = store.status;
 store.addEventListener('status', () => {
-  updateSyncDot();
+  const s = store.status;
+  if (s !== lastStatus) {
+    if (s === 'error') toast('Speichern fehlgeschlagen – Details unter Einstellungen');
+    if (s === 'offline' && store.dirty) toast('Offline – Änderungen werden später gespeichert');
+  }
+  lastStatus = s;
   if (state.view === 'settings') scheduleRender();
 });
 
 store.addEventListener('change', () => {
-  updateSyncDot();
   if (state.view === 'pick') {
     if (!state.pickTouched && tryAutoPick()) return;
     renderPickResults();
@@ -1178,7 +1192,6 @@ if (!store.configured) {
   state.tab = 'here';
   go('setup', {}, { replace: true });
 } else {
-  updateSyncDot();
   startHere();
   store.pull().then(() => processQueue());
 }
