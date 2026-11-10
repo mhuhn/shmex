@@ -9,6 +9,8 @@ import {
 } from './ui.js';
 
 const AUTO_RADIUS = 200;
+const AMOUNT_LABELS = { 1: 'wenig', 5: 'reichlich', 6: 'zu viel' };
+const VALUE_LABELS = { 1: 'teuer', 5: 'top' };
 const OSM_RADIUS = 500;
 const README_URL = 'https://github.com/mhuhn/shmex#einrichtung';
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
@@ -436,7 +438,7 @@ VIEWS.location = (params) => {
 function dishRow(dish, date) {
   const cls = dish.rating >= 4 ? ' like' : dish.rating && dish.rating <= 2 ? ' dislike' : '';
   const meta = [
-    dish.amount ? `Menge ${dish.amount}/5` : '',
+    dish.amount ? (dish.amount > 5 ? 'Menge: zu viel' : `Menge ${dish.amount}/5`) : '',
     dish.value ? `Preis/Leistung ${dish.value}/5` : '',
     date ? fmtDate(date) : '',
   ].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join('');
@@ -710,8 +712,8 @@ function openDishSheet({ dishId, personId, params }) {
       </label>
       <div class="field">Gesamtwertung <span class="small muted" style="font-weight:400">(optional, nochmal tippen zum Entfernen)</span>
         <div id="ratingWrap">${starInput('rating', d.rating)}</div></div>
-      <div class="field">Menge<div id="amountWrap">${scaleInput('amount', d.amount, 'wenig', 'reichlich', 'Menge')}</div></div>
-      <div class="field">Preis/Leistung<div id="valueWrap">${scaleInput('value', d.value, 'teuer', 'top', 'Preis/Leistung')}</div></div>
+      <div class="field">Menge<div id="amountWrap">${scaleInput('amount', d.amount, AMOUNT_LABELS, 'Menge', 6)}</div></div>
+      <div class="field">Preis/Leistung<div id="valueWrap">${scaleInput('value', d.value, VALUE_LABELS, 'Preis/Leistung')}</div></div>
       <label class="field">Kommentar<textarea id="dishComment" placeholder="optional, z. B. „zu scharf“ oder „ohne Zwiebeln bestellen“">${esc(d.comment || '')}</textarea></label>
       <div class="field">Foto
         <div id="photoBox"></div>
@@ -752,8 +754,8 @@ function openDishSheet({ dishId, personId, params }) {
           el.querySelector('#dishName').value = d.name;
           el.querySelector('#dishComment').value = d.comment;
           el.querySelector('#ratingWrap').innerHTML = starInput('rating', d.rating);
-          el.querySelector('#amountWrap').innerHTML = scaleInput('amount', d.amount, 'wenig', 'reichlich', 'Menge');
-          el.querySelector('#valueWrap').innerHTML = scaleInput('value', d.value, 'teuer', 'top', 'Preis/Leistung');
+          el.querySelector('#amountWrap').innerHTML = scaleInput('amount', d.amount, AMOUNT_LABELS, 'Menge', 6);
+          el.querySelector('#valueWrap').innerHTML = scaleInput('value', d.value, VALUE_LABELS, 'Preis/Leistung');
           el.querySelector('#templates').innerHTML = `<p class="small muted">Vorlage „${esc(t.name)}“ von ${esc(personName(t.personId))} übernommen – alles lässt sich noch ändern.</p>`;
           commit();
           if (t.photoId && !d.photoId) {
@@ -777,8 +779,8 @@ function openDishSheet({ dishId, personId, params }) {
         const val = Number(b.dataset.value);
         d[field] = d[field] === val ? null : val;
         if (field === 'rating') el.querySelector('#ratingWrap').innerHTML = starInput('rating', d.rating);
-        if (field === 'amount') el.querySelector('#amountWrap').innerHTML = scaleInput('amount', d.amount, 'wenig', 'reichlich', 'Menge');
-        if (field === 'value') el.querySelector('#valueWrap').innerHTML = scaleInput('value', d.value, 'teuer', 'top', 'Preis/Leistung');
+        if (field === 'amount') el.querySelector('#amountWrap').innerHTML = scaleInput('amount', d.amount, AMOUNT_LABELS, 'Menge', 6);
+        if (field === 'value') el.querySelector('#valueWrap').innerHTML = scaleInput('value', d.value, VALUE_LABELS, 'Preis/Leistung');
         commit();
       });
       el.querySelector('#photoInput').addEventListener('change', async (e) => {

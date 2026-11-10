@@ -16,19 +16,25 @@ export function stars(value, label = 'Bewertung') {
   return html + '</span>';
 }
 
-export function starInput(field, value, label = 'Gesamtwertung') {
+export function starInput(field, value, label = 'Gesamtwertung', max = 5) {
   let html = `<div class="star-input" role="group" aria-label="${esc(label)}">`;
-  for (let i = 1; i <= 5; i++) {
-    html += `<button type="button" class="${value && i <= value ? 'on' : ''}" data-field="${field}" data-value="${i}" aria-label="${esc(label)}: ${i} Stern${i > 1 ? 'e' : ''}" aria-pressed="${value === i}">
+  for (let i = 1; i <= max; i++) {
+    const cls = [value && i <= value ? 'on' : '', i > 5 ? 'extra' : ''].filter(Boolean).join(' ');
+    html += `<button type="button" class="${cls}" data-field="${field}" data-value="${i}" aria-label="${esc(label)}: ${i} Stern${i > 1 ? 'e' : ''}${i > 5 ? ' (zu viel)' : ''}" aria-pressed="${value === i}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="${STAR_PATH}"/></svg></button>`;
   }
   return html + '</div>';
 }
 
-// Menge und Preis/Leistung: ebenfalls Sterne, darunter die Bedeutung der Enden.
-export function scaleInput(field, value, left, right, label) {
-  return `<div class="star-scale">${starInput(field, value, label)}
-    <div class="scale-labels"><span>${esc(left)}</span><span>${esc(right)}</span></div></div>`;
+// Menge und Preis/Leistung: ebenfalls Sterne, darunter die Bedeutung einzelner Stufen.
+// labels: { 1: 'wenig', 5: 'reichlich', 6: 'zu viel' } – Schlüssel = Stern, unter dem der Text steht.
+export function scaleInput(field, value, labels, label, max = 5) {
+  const cells = [];
+  for (let i = 1; i <= max; i++) {
+    cells.push(`<span class="${i === 1 ? 'first' : ''}${i > 5 ? ' extra' : ''}">${esc(labels[i] || '')}</span>`);
+  }
+  return `<div class="star-scale">${starInput(field, value, label, max)}
+    <div class="scale-labels" style="grid-template-columns: repeat(${max}, 48px)">${cells.join('')}</div></div>`;
 }
 
 export function initials(name) {
