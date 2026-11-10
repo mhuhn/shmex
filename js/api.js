@@ -46,7 +46,32 @@ export class Api {
     return json;
   }
 
-  ping() { return this.call('ping'); }
+  // Bei „keine Verbindung“: herausfinden, ob das Script überhaupt öffentlich erreichbar ist.
+  async diagnose() {
+    if (!navigator.onLine) return 'offline';
+    try {
+      const res = await fetch(this.url, { method: 'GET', redirect: 'follow' });
+      const text = await res.text();
+      return text.includes('shmex-Brücke') ? 'post-failed' : 'unexpected';
+    } catch (err) {
+      return 'unreachable';
+    }
+  }
+
+  async ping() {
+    try {
+      return await this.call('ping');
+    } catch (err) {
+      if (err.code !== 'network') throw err;
+      const messages = {
+        offline: 'Kein Internet. Bitte mit Netz erneut versuchen.',
+        unreachable: 'Das Apps Script ist nicht öffentlich erreichbar. Meist ist die Web-App mit „Zugriff: Jeder mit Google-Konto“ statt „Jeder“ bereitgestellt. Test: Die URL in Safari öffnen, dort muss „shmex-Brücke läuft“ stehen.',
+        'post-failed': 'Das Apps Script ist erreichbar, bricht beim Verbinden aber ab. Meist fehlt die Drive-Berechtigung oder FOLDER_URL stimmt nicht. Fehlermeldung in Apps Script unter „Ausführungen“ ansehen, korrigieren und eine neue Version bereitstellen.',
+        unexpected: 'Unter der URL läuft nicht die shmex-Brücke. Wurde nach dem Einfügen des Codes eine neue Version bereitgestellt?',
+      };
+      throw new ApiError(messages[await this.diagnose()], 'network');
+    }
+  }
   load() { return this.call('load'); }
   save(data, baseRev) { return this.call('save', { data, baseRev }, { timeout: 45000 }); }
   uploadPhoto(photoId, base64) { return this.call('uploadPhoto', { photoId, base64, mime: 'image/jpeg' }, { timeout: 60000 }); }
